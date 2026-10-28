@@ -3107,7 +3107,7 @@ function getData(){
  projects.filter(r=>String(r.proyecto||'').trim()&&!EXISTING_PROJECTS.some(name=>norm(name)===norm(r.proyecto))).forEach(r=>{
   const name=String(r.proyecto).trim();
   if(output.some(d=>norm(d.campus)===norm(name)))return;
-  output.push({campus:name,descripcion:'Información de ambientes por completar',avance_obra_pct:r.avance_obra_pct||0,avance_compras_pct:r.avance_compras_pct||0,avance_implementacion_pct:(pct(r.avance_obra_pct)+pct(r.avance_compras_pct))/2,fecha_objetivo_texto:r.fecha_objetivo_texto||'Por definir',url_seguimiento:'https://seguimiento-proyectos-ops-utp.proyectos-ops-utp.workers.dev/'});
+  output.push({campus:name,descripcion:'Información de ambientes por completar',avance_obra_pct:r.avance_obra_pct||0,avance_compras_pct:r.avance_compras_pct||0,avance_implementacion_pct:(pct(r.avance_obra_pct)+pct(r.avance_compras_pct))/2,fecha_objetivo_texto:r.fecha_objetivo_texto||'Por definir',imagen_principal_url:r.imagen_principal_url||'',imagen_secundaria_url:r.imagen_secundaria_url||'',url_seguimiento:'https://seguimiento-proyectos-ops-utp.proyectos-ops-utp.workers.dev/'});
  });
  return output;
 }
@@ -3117,7 +3117,40 @@ if(!navGroup||!projectSummary)return;
 let dynamicIds=new Set();
 let insertAfter=projectSummary;
 function photosFor(row){const k=norm(row.campus);const map=(typeof BD_EXCEL!=='undefined'&&BD_EXCEL.IMAGENES_FOTOS)||{};return map[k]||[];}
-function photo(row,field,index){const photos=photosFor(row);const type=index===0?'principal':'secundaria';const found=photos.find(x=>x.tipo===type)||photos[index];if(found)return found.src;const val=String(row[field]||'').trim();if(/^(https?:\/\/|data:image\/)/i.test(val))return val;let k=norm(row.campus);return (k.includes('saco olivero')?DEFAULT_IMAGES['saco olivero'][index]:'');}
+// Los proyectos anteriores a Saco Olivero conservan sus fotos originales.
+const DRIVE_IMAGE_START='proyecto saco olivero';
+function isDriveProject(row){
+ const k=norm(row.campus);
+ if(k.includes('saco olivero')||k.includes('saco oliveros'))return true;
+ const details=(typeof BD_EXCEL!=='undefined'&&Array.isArray(BD_EXCEL.PROYECTO_DETALLE))?BD_EXCEL.PROYECTO_DETALLE:INITIAL_DETAILS;
+ const ix=details.findIndex(r=>norm(r.campus).includes('saco olivero'));
+ const current=details.findIndex(r=>norm(r.campus)===k);
+ if(ix>=0 && current>ix)return true;
+ return current<0; // proyecto nuevo agregado automáticamente desde PROYECTOS
+}
+function driveImageURL(value){
+ const v=String(value||'').trim();if(!v)return '';
+ if(/^data:image\//i.test(v))return v;
+ // Convierte el enlace compartido de Drive a un recurso de imagen.
+ const m=v.match(/drive\.google\.com\/file\/d\/([A-Za-z0-9_-]+)/i)||v.match(/[?&]id=([A-Za-z0-9_-]+)/);
+ if(m)return 'https://drive.google.com/thumbnail?id='+encodeURIComponent(m[1])+'&sz=w1600';
+ return /^https?:\/\//i.test(v)?v:'';
+}
+function projectExcelRow(row){
+ const all=(typeof BD_EXCEL!=='undefined'&&Array.isArray(BD_EXCEL.PROYECTOS))?BD_EXCEL.PROYECTOS:[];
+ return all.find(p=>norm(p.proyecto)===norm(row.campus)) || (norm(row.campus).includes('saco olivero')?all.find(p=>norm(p.proyecto).includes('saco olivero')):null);
+}
+function photo(row,field,index){
+ if(isDriveProject(row)){
+  const p=projectExcelRow(row);
+  const val=(row[field]||p?.[field]||'');
+  return driveImageURL(val);
+ }
+ const photos=photosFor(row);const type=index===0?'principal':'secundaria';
+ const found=photos.find(x=>x.tipo===type)||photos[index];if(found)return found.src;
+ const val=String(row[field]||'').trim();if(/^(https?:\/\/|data:image\/)/i.test(val))return val;
+ let k=norm(row.campus);return (k.includes('saco olivero')?DEFAULT_IMAGES['saco olivero'][index]:'');
+}
 function paint(row){
  const id=idFor(row),old=document.getElementById('sec-'+id);
  let section=old;
@@ -3138,7 +3171,7 @@ function paint(row){
 
  [['.project-main-photo',a,'Imagen principal'],['.project-secondary-photo',b,'Imagen secundaria']].forEach(([selector,url,alt])=>{
   const target=section.querySelector(selector);if(!target)return;
-  if(url){let node=target.querySelector('img');if(!node){node=document.createElement('img');target.replaceChildren(node);}if(node.getAttribute('src')!==url)node.src=url;node.alt=alt+' de '+row.campus;}
+  if(url){let node=target.querySelector('img');if(!node){node=document.createElement('img');target.replaceChildren(node);}if(node.getAttribute('src')!==url){node.onerror=function(){this.onerror=null;const ph=document.createElement('div');ph.className='project-photo-empty';ph.textContent='No se pudo cargar la fotografía. Verifica el enlace y permisos de Drive.';this.replaceWith(ph);};node.src=url;}node.alt=alt+' de '+row.campus;}
   else if(!target.querySelector('img')){target.innerHTML='<div class="project-photo-empty">Fotografía pendiente de agregar</div>';}
  });
  // Galería adicional: solo fotografías presentes en IMAGENES_PROYECTOS.
