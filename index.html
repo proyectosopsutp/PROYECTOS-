@@ -10,6 +10,7 @@
 <link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&amp;family=Inter+Tight:wght@600;700;800&amp;display=swap" rel="stylesheet"/>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <style>
 :root{
@@ -2600,6 +2601,51 @@ function updateImplementacionesExcel(){
     if(r.url) card.href=r.url;
   });
 }
+/* Fotos insertadas SOBRE las celdas D de IMAGENES_PROYECTOS (formato XLSX OOXML). */
+async function leerFotosInsertadas(buffer, workbook){
+ const fotos={};
+ if(typeof JSZip==='undefined'||!workbook.Sheets.IMAGENES_PROYECTOS)return fotos;
+ const norm=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+ const zip=await JSZip.loadAsync(buffer);
+ const parse=txt=>new DOMParser().parseFromString(txt,'application/xml');
+ const tags=(el,name)=>Array.from(el.getElementsByTagName('*')).filter(x=>x.localName===name);
+ const att=(el,name)=>el?.getAttribute(name)||el?.getAttribute('r:'+name)||Array.from(el?.attributes||[]).find(a=>a.localName===name)?.value||'';
+ const xml=async path=>zip.file(path)?parse(await zip.file(path).async('string')):null;
+ const sheetIdx=workbook.SheetNames.indexOf('IMAGENES_PROYECTOS')+1;
+ const sheetXml=await xml('xl/worksheets/sheet'+sheetIdx+'.xml');
+ const sr=await xml('xl/worksheets/_rels/sheet'+sheetIdx+'.xml.rels');
+ if(!sheetXml||!sr)return fotos;
+ const drawingRef=tags(sheetXml,'drawing')[0];
+ const drawingRel=tags(sr,'Relationship').find(x=>att(x,'Id')===att(drawingRef,'id'));
+ if(!drawingRel)return fotos;
+ const clean=(base,relative)=>{const stack=base.split('/').slice(0,-1);for(const v of relative.split('/')){if(v==='..')stack.pop();else if(v&&v!=='.')stack.push(v);}return stack.join('/');};
+ const drawingPath=clean('xl/worksheets/sheet'+sheetIdx+'.xml',att(drawingRel,'Target').replace(/^\//,''));
+ const drawing=await xml(drawingPath);
+ const drawingRels=await xml(drawingPath.replace(/\/([^/]+)$/, '/_rels/$1.rels'));
+ if(!drawing||!drawingRels)return fotos;
+ const rels=tags(drawingRels,'Relationship');
+ const ws=workbook.Sheets.IMAGENES_PROYECTOS;
+ const anchors=Array.from(drawing.documentElement.children).filter(el=>['oneCellAnchor','twoCellAnchor'].includes(el.localName));
+ for(const anchor of anchors){
+  const from=tags(anchor,'from')[0];if(!from)continue;
+  const row=Number(tags(from,'row')[0]?.textContent), col=Number(tags(from,'col')[0]?.textContent);
+  if(!Number.isFinite(row)||col<3)continue;
+  const project=String(ws['A'+(row+1)]?.v||'').trim();
+  const tipo=norm(ws['B'+(row+1)]?.v||'galeria');
+  if(!project)continue;
+  const blip=tags(anchor,'blip')[0];const rid=att(blip,'embed');
+  const rel=rels.find(x=>att(x,'Id')===rid);if(!rel)continue;
+  const path=clean(drawingPath,att(rel,'Target').replace(/^\//,''));
+  const file=zip.file(path);if(!file)continue;
+  const ext=path.split('.').pop().toLowerCase();
+  const mime={jpeg:'image/jpeg',jpg:'image/jpeg',png:'image/png',gif:'image/gif',webp:'image/webp',bmp:'image/bmp'}[ext];
+  if(!mime)continue;
+  const base64=await file.async('base64');
+  const key=norm(project);(fotos[key]??=[]).push({tipo:tipo,orden:Number(ws['C'+(row+1)]?.v||0),src:'data:'+mime+';base64,'+base64});
+ }
+ for(const arr of Object.values(fotos))arr.sort((a,b)=>a.orden-b.orden);
+ return fotos;
+}
 async function cargarExcelGitHub(){
   if(typeof XLSX==='undefined') throw new Error('No se cargó el lector de Excel (SheetJS).');
 
@@ -2679,6 +2725,9 @@ async function cargarExcelGitHub(){
   }
 
   if(!data || !data.KPIs_HTML) throw new Error('El Excel no contiene la hoja KPIs_HTML.');
+
+  try { data.IMAGENES_FOTOS=await leerFotosInsertadas(buffer, workbook); }
+  catch(err){ console.warn('No se pudieron extraer imágenes insertadas en el Excel',err);data.IMAGENES_FOTOS={}; }
 
   // El Excel de GitHub es la fuente principal. Los datos embebidos en el HTML
   // solo quedan como respaldo si el archivo no puede cargarse.
@@ -3075,7 +3124,8 @@ const projectSummary=document.getElementById('sec-proyectos-resumen');
 if(!navGroup||!projectSummary)return;
 let dynamicIds=new Set();
 let insertAfter=projectSummary;
-function photo(row,field,index){const val=String(row[field]||'').trim();if(/^(https?:\/\/|data:image\/)/i.test(val))return val;let k=norm(row.campus);return (k.includes('saco olivero')?DEFAULT_IMAGES['saco olivero'][index]:'');}
+function photosFor(row){const k=norm(row.campus);const map=(typeof BD_EXCEL!=='undefined'&&BD_EXCEL.IMAGENES_FOTOS)||{};return map[k]||[];}
+function photo(row,field,index){const photos=photosFor(row);const type=index===0?'principal':'secundaria';const found=photos.find(x=>x.tipo===type)||photos[index];if(found)return found.src;const val=String(row[field]||'').trim();if(/^(https?:\/\/|data:image\/)/i.test(val))return val;let k=norm(row.campus);return (k.includes('saco olivero')?DEFAULT_IMAGES['saco olivero'][index]:'');}
 function paint(row){
  const id=idFor(row),old=document.getElementById('sec-'+id);
  let section=old;
@@ -3099,6 +3149,16 @@ function paint(row){
   if(url){let node=target.querySelector('img');if(!node){node=document.createElement('img');target.replaceChildren(node);}if(node.getAttribute('src')!==url)node.src=url;node.alt=alt+' de '+row.campus;}
   else if(!target.querySelector('img')){target.innerHTML='<div class="project-photo-empty">Fotografía pendiente de agregar</div>';}
  });
+ // Galería adicional: solo fotografías presentes en IMAGENES_PROYECTOS.
+ let gallery=section.querySelector('.project-additional-gallery');
+ const extras=photosFor(row).filter(x=>x.tipo==='galeria');
+ if(extras.length){
+  if(!gallery){gallery=document.createElement('div');gallery.className='project-additional-gallery';section.appendChild(gallery);}
+  gallery.replaceChildren();
+  const h=document.createElement('h3');h.textContent='Galería de fotografías';gallery.appendChild(h);
+  const grid=document.createElement('div');grid.className='project-extra-grid';gallery.appendChild(grid);
+  extras.forEach(x=>{const im=document.createElement('img');im.src=x.src;im.alt='Fotografía de '+row.campus;im.loading='lazy';grid.appendChild(im);});
+ }else if(gallery)gallery.remove();
  if(typeof SECTION_META!=='undefined')SECTION_META[id]={eyebrow:'Proyectos 2026',title:norm(row.campus).includes('saco olivero')?'Proyecto Saco Olivero':row.campus};
  return id;
 }
@@ -3119,6 +3179,7 @@ rebuild();
 })();
 </script>
 <style>.project-photo-empty{height:100%;min-height:235px;background:var(--bg-soft);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:13px}.project-detail:has(.project-photo-empty) .project-main-photo{min-height:450px}.content:has(.project-detail.active){max-width:none}</style>
+<style>.project-additional-gallery{margin-top:24px}.project-additional-gallery h3{font-size:17px;margin-bottom:14px}.project-extra-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.project-extra-grid img{width:100%;height:230px;object-fit:cover;border-radius:10px;border:1px solid var(--border)}</style>
 </body>
 </html>
 ```
