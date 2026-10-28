@@ -766,6 +766,20 @@ footer.foot{padding:26px 32px 50px; color:var(--muted-2); font-size:11.5px; bord
   .cover-year{font-size:21px;}
 }
 </style>
+
+<style id="notion-implementaciones-embed-style">
+.notion-impl-bar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin:0 14px 14px;}
+.notion-impl-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
+.notion-impl-button{font:600 12px 'Inter',sans-serif;color:var(--ink);background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;cursor:pointer;text-decoration:none;}
+.notion-impl-button:hover{border-color:var(--red);color:var(--red-dark);}
+.notion-impl-button.primary{background:var(--red);border-color:var(--red);color:white;}
+.notion-impl-note{font-size:12px;color:var(--muted);}
+.notion-impl-frame-wrap{margin:0 14px 20px;border:1px solid var(--border);border-radius:10px;overflow:hidden;background:var(--bg);}
+.notion-impl-frame{display:block;width:100%;height:min(76vh,850px);min-height:520px;border:0;background:white;}
+.notion-impl-caption{font-size:12px;color:var(--muted);padding:10px 14px;background:var(--bg-soft);}
+#sec-mejoras-ate.notion-impl-live .implementaciones-filter-bar,#sec-mejoras-ate.notion-impl-live .implementaciones-gallery{display:none;}
+#sec-mejoras-ate:not(.notion-impl-live) .notion-impl-frame-wrap{display:none;}
+</style>
 </head>
 <body>
 <section class="cover-page" id="coverPage" aria-label="Carátula de Gerencia de Servicios Generales">
@@ -3205,6 +3219,42 @@ rebuild();
 </script>
 <style>.project-photo-empty{height:100%;min-height:235px;background:var(--bg-soft);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:13px}.project-detail:has(.project-photo-empty) .project-main-photo{min-height:450px}.content:has(.project-detail.active){max-width:none}</style>
 <style>.project-additional-gallery{margin-top:24px}.project-additional-gallery h3{font-size:17px;margin-bottom:14px}.project-extra-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.project-extra-grid img{width:100%;height:230px;object-fit:cover;border-radius:10px;border:1px solid var(--border)}</style>
-</body>
+\n<script id="notion-implementaciones-embed-script">
+(function(){
+ 'use strict';
+ var SEC_ID='sec-mejoras-ate';
+ var DEFAULT_URL='https://iniciativas-estrategicas-2026.notion.site/3d755146449f80c0a3cce29f4f317a51?v=3d755146449f802ba9a4000c451a72db';
+ var currentUrl='';
+ function notionUrl(v){
+   try {var u=new URL(String(v||'').trim());if(u.protocol!=='https:'||!/(^|\.)notion\.(site|so)$/.test(u.hostname)) return '';return u.href;} catch(e){return '';}
+ }
+ function getSource(){
+   var rows=window.BD_EXCEL && window.BD_EXCEL.IMPLEMENTACIONES;
+   if(Array.isArray(rows)){for(var i=0;i<rows.length;i++){var link=notionUrl(rows[i] && rows[i].url);if(link)return link;}}
+   return DEFAULT_URL;
+ }
+ function init(){
+   var sec=document.getElementById(SEC_ID);if(!sec||sec.dataset.notionEmbedReady)return;
+   sec.dataset.notionEmbedReady='1';
+   var bar=document.createElement('div');bar.className='notion-impl-bar';
+   var info=document.createElement('span');info.className='notion-impl-note';info.textContent='Vista de Notion · datos sujetos a la disponibilidad de la página publicada';
+   var actions=document.createElement('div');actions.className='notion-impl-actions';
+   var refresh=document.createElement('button');refresh.type='button';refresh.className='notion-impl-button';refresh.textContent='Actualizar vista';
+   var original=document.createElement('button');original.type='button';original.className='notion-impl-button';original.textContent='Ver tarjetas originales';
+   var open=document.createElement('a');open.className='notion-impl-button primary';open.target='_blank';open.rel='noopener noreferrer';open.textContent='Abrir en Notion ↗';
+   actions.append(refresh,original,open);bar.append(info,actions);
+   var wrap=document.createElement('div');wrap.className='notion-impl-frame-wrap';
+   var frame=document.createElement('iframe');frame.className='notion-impl-frame';frame.title='Implementaciones — página publicada de Notion';frame.loading='lazy';frame.referrerPolicy='strict-origin-when-cross-origin';
+   var caption=document.createElement('div');caption.className='notion-impl-caption';caption.textContent='Si Notion no aparece aquí, es posible que bloquee su visualización dentro de otras páginas. Usa «Abrir en Notion» para ver la información actualizada.';
+   wrap.append(frame,caption);sec.insertBefore(wrap,sec.firstChild);sec.insertBefore(bar,wrap);
+   function sync(force){var u=getSource();open.href=u;if(u!==currentUrl||force){currentUrl=u;frame.src=u+(u.indexOf('?')>=0?'&':'?')+'dashboard_refresh='+Date.now();}}
+   refresh.addEventListener('click',function(){sec.classList.add('notion-impl-live');original.textContent='Ver tarjetas originales';sync(true);});
+   original.addEventListener('click',function(){var live=sec.classList.toggle('notion-impl-live');original.textContent=live?'Ver tarjetas originales':'Volver a Notion';if(live)sync(false);});
+   sec.classList.add('notion-impl-live');sync(true);
+   window.setInterval(function(){sync(false);},2500);
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+</script>\n</body>
 </html>
 ```
