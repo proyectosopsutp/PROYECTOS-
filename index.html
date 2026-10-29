@@ -3227,44 +3227,70 @@ rebuild();
 </script>
 <style>.project-photo-empty{height:100%;min-height:235px;background:var(--bg-soft);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:13px}.project-detail:has(.project-photo-empty) .project-main-photo{min-height:450px}.content:has(.project-detail.active){max-width:none}</style>
 <style>.project-additional-gallery{margin-top:24px}.project-additional-gallery h3{font-size:17px;margin-bottom:14px}.project-extra-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px}.project-extra-grid img{width:100%;height:230px;object-fit:cover;border-radius:10px;border:1px solid var(--border)}</style>
-\n<script id="notion-implementaciones-embed-script">
+\n\n
+<script id="notion-porcentajes-sync-script">
 (function(){
   'use strict';
-  const NOTION_URL = 'https://iniciativas-estrategicas-2026.notion.site/3d755146449f80c0a3cce29f4f317a51?v=3d755146449f802ba9a4000c451a72db';
-  function init(){
-    const sec = document.getElementById('sec-mejoras-ate');
-    if (!sec || sec.dataset.notionEmbedReady) return;
-    sec.dataset.notionEmbedReady='1';
-    sec.classList.add('notion-impl-live');
-    const bar=document.createElement('div');
-    bar.className='notion-impl-bar';
-    const info=document.createElement('span');
-    info.className='notion-impl-note';
-    info.textContent='Implementaciones · vista oficial de Notion (sin Excel)';
-    const actions=document.createElement('div');
-    actions.className='notion-impl-actions';
-    const refresh=document.createElement('button');
-    refresh.type='button';refresh.className='notion-impl-button';
-    refresh.textContent='Actualizar vista';
-    const open=document.createElement('a');
-    open.href=NOTION_URL;open.target='_blank';open.rel='noopener noreferrer';
-    open.className='notion-impl-button primary';open.textContent='Abrir en Notion ↗';
-    actions.append(refresh,open);bar.append(info,actions);
-    const wrap=document.createElement('div');wrap.className='notion-impl-frame-wrap';
-    const frame=document.createElement('iframe');frame.className='notion-impl-frame';
-    frame.title='Vista oficial de Implementaciones en Notion';
-    frame.loading='lazy';frame.referrerPolicy='strict-origin-when-cross-origin';
-    const caption=document.createElement('div');caption.className='notion-impl-caption';
-    caption.textContent='Esta vista depende de que Notion permita mostrarse dentro de GitHub Pages. Si aparece en blanco o da un error, pulsa «Abrir en Notion» para consultar los datos actualizados.';
-    wrap.append(frame,caption);
-    sec.insertBefore(wrap,sec.firstChild);sec.insertBefore(bar,wrap);
-    function load(){const join=NOTION_URL.includes('?')?'&':'?';frame.src=NOTION_URL+join+'dashboard_refresh='+Date.now();}
-    refresh.addEventListener('click',load);
-    load();
+  const SEC='sec-mejoras-ate';
+  const URL='implementaciones.json';
+  const official='https://iniciativas-estrategicas-2026.notion.site/3d755146449f80c0a3cce29f4f317a51?v=3d755146449f802ba9a4000c451a72db';
+  const normalize=s=>(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\s+/g,' ').trim().toUpperCase();
+  const pctFormat=n=>Number.isInteger(n)?String(n):n.toFixed(1);
+  async function update(){
+    const section=document.getElementById(SEC);
+    if(!section)return;
+    const status=document.getElementById('notion-sync-status');
+    try{
+      const url=new URL(URL,document.baseURI);url.searchParams.set('v',Date.now());
+      const res=await fetch(url,{cache:'no-store'});
+      if(!res.ok)throw new Error('HTTP '+res.status);
+      const data=await res.json();
+      const rows=Array.isArray(data.implementaciones)?data.implementaciones:[];
+      if(!rows.length)throw new Error('JSON sin registros');
+      const lookup=new Map(rows.map(row=>[normalize(row.titulo),row]));
+      let updated=0;
+      section.querySelectorAll('.implementacion-tab').forEach(card=>{
+        const title=card.querySelector('.implementacion-title');
+        const value=card.querySelector('.implementacion-pct');
+        const fill=card.querySelector('.implementacion-fill');
+        if(!title||!value||!fill)return;
+        const row=lookup.get(normalize(title.textContent));
+        if(!row)return;
+        const n=Number(row.avance_pct);
+        if(!Number.isFinite(n))return;
+        const percent=Math.min(100,Math.max(0,n));
+        value.textContent=pctFormat(percent)+' %';fill.style.width=percent+'%';updated++;
+      });
+      if(status){
+        const stamp=data.actualizado?new Date(data.actualizado).toLocaleString('es-PE'):'';
+        status.textContent='Notion sincronizado: '+updated+' tarjetas actualizadas'+(stamp?' · '+stamp:'');
+      }
+    }catch(e){
+      if(status)status.textContent='Se muestran los datos de respaldo. Aún no hay sincronización disponible.';
+      console.warn('Notion sync:',e.message);
+    }
   }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);
-  else init();
+  function init(){
+    const section=document.getElementById(SEC);
+    if(!section)return;
+    section.classList.remove('notion-impl-live');
+    section.querySelectorAll('.notion-impl-frame-wrap,.notion-impl-bar').forEach(x=>x.remove());
+    const bar=document.createElement('div');bar.className='notion-impl-bar';
+    const status=document.createElement('span');status.id='notion-sync-status';status.className='notion-impl-note';
+    status.textContent='Comprobando porcentajes sincronizados…';
+    const actions=document.createElement('div');actions.className='notion-impl-actions';
+    const refresh=document.createElement('button');refresh.type='button';refresh.className='notion-impl-button';refresh.textContent='Actualizar porcentajes';refresh.onclick=update;
+    const open=document.createElement('a');open.href=official;open.target='_blank';open.rel='noopener noreferrer';open.className='notion-impl-button primary';open.textContent='Abrir en Notion ↗';
+    actions.append(refresh,open);bar.append(status,actions);
+    const filter=section.querySelector('.implementaciones-filter-bar');
+    section.insertBefore(bar,filter||section.firstChild);
+    update();
+    // Consulta el JSON nuevamente al volver a la pestaña del navegador.
+    document.addEventListener('visibilitychange',()=>{if(!document.hidden)update()});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
-</script>\n</body>
+</script>
+</body>
 </html>
 ```
